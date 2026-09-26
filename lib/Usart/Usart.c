@@ -3,24 +3,9 @@
 //********************************************************************************************************************************************************************************************************
 #include "Usart.h"
 
-//********************************************************************************************************************************************************************************************************
-// Private Variable
-//********************************************************************************************************************************************************************************************************
-static uint8_t txBuffer[TX_BUFFER_SIZE];
-static volatile uint8_t txBufferIn = 0;
-static volatile uint8_t txBufferOut = 0;
-
-static uint8_t rxBuffer[RX_BUFFER_SIZE];
-static volatile uint8_t rxBufferIn = 0;
-static volatile uint8_t rxBufferOut = 0;
-
-volatile static uint8_t txCnt = 0;
-volatile static uint8_t rxCnt = 0;
-
-static bool rxPollingAvailable = false;
-
-static const UsartConf *s_conf = NULL;
-static USART_TypeDef *s_usart = NULL;
+UsartHandle g_usart1 = {0};
+UsartHandle g_usart2 = {0};
+UsartHandle g_usart3 = {0};
 
 //********************************************************************************************************************************************************************************************************
 // Private Function Declaration
@@ -28,67 +13,83 @@ static USART_TypeDef *s_usart = NULL;
 static uint16_t _computeBaudrate(uint32_t mcuClk, uint32_t br);
 static void _enableUsartClock(USART_TypeDef *USARTx);
 static void _enableUsartInterrupt(USART_TypeDef *USARTx);
-static void _usartIrqHandler(void);
-static void _lowInit(const UsartConf *conf);
-static void _writeSinglePolling(uint8_t data);
-static void _writeSingleInterrupt(uint8_t data);
-static uint8_t _readSinglePolling(void);
-static uint8_t _readSingleInterrupt(void);
+static void _usartIrqHandler(UsartHandle *handle);
+static void _lowInit(UsartHandle *handle);
+static void _writeSinglePolling(UsartHandle *handle, uint8_t data);
+static void _writeSingleInterrupt(UsartHandle *handle, uint8_t data);
+static uint8_t _readSinglePolling(UsartHandle *handle);
+static uint8_t _readSingleInterrupt(UsartHandle *handle);
 
 //********************************************************************************************************************************************************************************************************
 // Public Function Definition
 //********************************************************************************************************************************************************************************************************
-void Usart_Init(const UsartConf *conf, USART_TypeDef *usart)
+void Usart_Init(UsartHandle *handle, const UsartConf *conf, USART_TypeDef *usart)
 {
-    if(conf != NULL)
+    if((handle != NULL) && (conf != NULL))
     {
-        s_conf = conf;
-        s_usart = usart;
+        handle->conf = conf;
+        handle->usart = usart;
+        handle->txBufferIn = 0;
+        handle->txBufferOut = 0;
+        handle->txCnt = 0;
+        handle->rxBufferIn = 0;
+        handle->rxBufferOut = 0;
+        handle->rxCnt = 0;
+        handle->rxPollingAvailable = false;
 
-        _lowInit(s_conf);
+        _lowInit(handle);
     }
 }
 //********************************************************************************************************************************************************************************************************
 
-void Usart_WriteByte(uint8_t data)
+void Usart_WriteByte(UsartHandle *handle, uint8_t data)
 {
-    if(s_conf->UseIt == true)
+    if((handle != NULL) && (handle->conf != NULL))
     {
-        _writeSingleInterrupt(data);
-    }
-    else
-    {
-        _writeSinglePolling(data);
+        if(handle->conf->UseIt == true)
+        {
+            _writeSingleInterrupt(handle, data);
+        }
+        else
+        {
+            _writeSinglePolling(handle, data);
+        }
     }
 }
 //********************************************************************************************************************************************************************************************************
 
-void Usart_WriteBytes(uint8_t *data, uint8_t size)
+void Usart_WriteBytes(UsartHandle *handle, uint8_t *data, uint8_t size)
 {
-    for(uint8_t i = 0; i < size; i++)
+    if((handle != NULL) && (data != NULL))
     {
-        Usart_WriteByte(data[i]);
+        for(uint8_t i = 0; i < size; i++)
+        {
+            Usart_WriteByte(handle, data[i]);
+        }
     }
 }
 //********************************************************************************************************************************************************************************************************
 
-bool Usart_RxAvailable(void)
+bool Usart_RxAvailable(UsartHandle *handle)
 {
     bool returnValue = false;
 
-    if(s_conf->UseIt == true)
+    if(handle != NULL)
     {
-        if(rxCnt > 0)
+        if(handle->conf->UseIt == true)
         {
-            returnValue = true;
+            if(handle->rxCnt > 0)
+            {
+                returnValue = true;
+            }
         }
-    }
-    else
-    {
-        if(rxPollingAvailable == true)
+        else
         {
-            returnValue = true;
-            rxPollingAvailable = false;
+            if(handle->rxPollingAvailable == true)
+            {
+                returnValue = true;
+                handle->rxPollingAvailable = false;
+            }
         }
     }
 
@@ -96,17 +97,20 @@ bool Usart_RxAvailable(void)
 }
 //********************************************************************************************************************************************************************************************************
 
-uint8_t Usart_ReadByte(void)
+uint8_t Usart_ReadByte(UsartHandle *handle)
 {
     uint8_t data = 0;
 
-    if(s_conf->UseIt == true)
+    if(handle != NULL)
     {
-        data = _readSingleInterrupt();
-    }
-    else
-    {
-        data = _readSinglePolling();
+        if(handle->conf->UseIt == true)
+        {
+            data = _readSingleInterrupt(handle);
+        }
+        else
+        {
+            data = _readSinglePolling(handle);
+        }
     }
 
     return data;
@@ -155,78 +159,81 @@ static void _enableUsartInterrupt(USART_TypeDef *USARTx)
 }
 //********************************************************************************************************************************************************************************************************
 
-static void _lowInit(const UsartConf *conf)
+static void _lowInit(UsartHandle *handle)
 {
-    _enableUsartClock(s_usart);
-
-    s_usart->CR1 &= ~(USART_CR1_M | USART_CR1_PCE | USART_CR1_PS | USART_CR1_TE | USART_CR1_RE | USART_CR1_UE);
-    s_usart->CR2 &= ~USART_CR2_STOP;
-    s_usart->CR1 |= conf->USART_InitStruct.USART_Mode | conf->USART_InitStruct.USART_WordLength | conf->USART_InitStruct.USART_Parity;
-    s_usart->CR2 |= conf->USART_InitStruct.USART_StopBits;
-    s_usart->BRR = _computeBaudrate(conf->McuClock, conf->USART_InitStruct.USART_BaudRate);
-    s_usart->CR1 |= USART_CR1_UE;
-
-    if(conf->UseIt == true)
+    if(handle != NULL)
     {
-        _enableUsartInterrupt(s_usart);
-        s_usart->CR1 |= USART_CR1_RXNEIE;
+        _enableUsartClock(handle->usart);
+
+        handle->usart->CR1 &= ~(USART_CR1_M | USART_CR1_PCE | USART_CR1_PS | USART_CR1_TE | USART_CR1_RE | USART_CR1_UE);
+        handle->usart->CR2 &= ~USART_CR2_STOP;
+        handle->usart->CR1 |= handle->conf->USART_InitStruct.USART_Mode | handle->conf->USART_InitStruct.USART_WordLength | handle->conf->USART_InitStruct.USART_Parity;
+        handle->usart->CR2 |= handle->conf->USART_InitStruct.USART_StopBits;
+        handle->usart->BRR = _computeBaudrate(handle->conf->McuClock, handle->conf->USART_InitStruct.USART_BaudRate);
+        handle->usart->CR1 |= USART_CR1_UE;
+
+        if(handle->conf->UseIt == true)
+        {
+            _enableUsartInterrupt(handle->usart);
+            handle->usart->CR1 |= USART_CR1_RXNEIE;
+        }
     }
 }
 //********************************************************************************************************************************************************************************************************
 
-static void _writeSinglePolling(uint8_t data)
+static void _writeSinglePolling(UsartHandle *handle, uint8_t data)
 {
-    while(!(s_usart->SR & USART_SR_TXE))
+    while(!(handle->usart->SR & USART_SR_TXE))
     {
     }
-    s_usart->DR = (data & 0xFF);
+    handle->usart->DR = (data & 0xFF);
 }
 //********************************************************************************************************************************************************************************************************
 
-static void _writeSingleInterrupt(uint8_t data)
+static void _writeSingleInterrupt(UsartHandle *handle, uint8_t data)
 {
-    if(txCnt < TX_BUFFER_SIZE)
+    if(handle->txCnt < TX_BUFFER_SIZE)
     {
         __disable_irq();
-        txBuffer[txBufferIn++] = data;
-        txCnt++;
+        handle->txBuffer[handle->txBufferIn++] = data;
+        handle->txCnt++;
         __enable_irq();
-        if(txBufferIn >= TX_BUFFER_SIZE)
+        if(handle->txBufferIn >= TX_BUFFER_SIZE)
         {
-            txBufferIn = 0;
+            handle->txBufferIn = 0;
         }
-        s_usart->CR1 |= USART_CR1_TXEIE;
+        handle->usart->CR1 |= USART_CR1_TXEIE;
     }
 }
 //********************************************************************************************************************************************************************************************************
 
-static uint8_t _readSinglePolling(void)
+static uint8_t _readSinglePolling(UsartHandle *handle)
 {
     uint8_t data = 0;
 
-    while(!(s_usart->SR & USART_SR_RXNE))
+    while(!(handle->usart->SR & USART_SR_RXNE))
     {
     }
-    data = s_usart->DR;
-    rxPollingAvailable = true;
+    data = handle->usart->DR;
+    handle->rxPollingAvailable = true;
 
     return data;
 }
 //********************************************************************************************************************************************************************************************************
 
-static uint8_t _readSingleInterrupt(void)
+static uint8_t _readSingleInterrupt(UsartHandle *handle)
 {
     uint8_t data = 0;
 
-    if(rxCnt > 0)
+    if(handle->rxCnt > 0)
     {
         __disable_irq();
-        data = rxBuffer[rxBufferOut++];
-        rxCnt--;
+        data = handle->rxBuffer[handle->rxBufferOut++];
+        handle->rxCnt--;
         __enable_irq();
-        if(rxBufferOut >= RX_BUFFER_SIZE)
+        if(handle->rxBufferOut >= RX_BUFFER_SIZE)
         {
-            rxBufferOut = 0;
+            handle->rxBufferOut = 0;
         }
     }
 
@@ -234,32 +241,35 @@ static uint8_t _readSingleInterrupt(void)
 }
 //********************************************************************************************************************************************************************************************************
 
-static void _usartIrqHandler(void)
+static void _usartIrqHandler(UsartHandle *handle)
 {
-    if(s_usart->SR & USART_SR_TXE)
+    if(handle != NULL)
     {
-        if(txCnt == 0)
+        if(handle->usart->SR & USART_SR_TXE)
         {
-            s_usart->CR1 &= ~USART_CR1_TXEIE;
-        }
-        else
-        {
-            s_usart->DR = txBuffer[txBufferOut++];
-            txCnt--;
-            if(txBufferOut >= TX_BUFFER_SIZE)
+            if(handle->txCnt == 0)
             {
-                txBufferOut = 0;
+                handle->usart->CR1 &= ~USART_CR1_TXEIE;
+            }
+            else
+            {
+                handle->usart->DR = handle->txBuffer[handle->txBufferOut++];
+                handle->txCnt--;
+                if(handle->txBufferOut >= TX_BUFFER_SIZE)
+                {
+                    handle->txBufferOut = 0;
+                }
             }
         }
-    }
 
-    if(s_usart->SR & USART_SR_RXNE)
-    {
-        rxBuffer[rxBufferIn++] = s_usart->DR;
-        rxCnt++;
-        if(rxBufferIn >= RX_BUFFER_SIZE)
+        if(handle->usart->SR & USART_SR_RXNE)
         {
-            rxBufferIn = 0;
+            handle->rxBuffer[handle->rxBufferIn++] = handle->usart->DR;
+            handle->rxCnt++;
+            if(handle->rxBufferIn >= RX_BUFFER_SIZE)
+            {
+                handle->rxBufferIn = 0;
+            }
         }
     }
 }
@@ -268,15 +278,15 @@ static void _usartIrqHandler(void)
 //********************************************************************************************************************************************************************************************************
 void USART1_IRQHandler(void)
 {
-    _usartIrqHandler();
+    _usartIrqHandler(&g_usart1);
 }
 
 void USART2_IRQHandler(void)
 {
-    _usartIrqHandler();
+    _usartIrqHandler(&g_usart2);
 }
 
 void USART3_IRQHandler(void)
 {
-    _usartIrqHandler();
+    _usartIrqHandler(&g_usart3);
 }
