@@ -16,22 +16,44 @@
 #define RX_BUFFER_SIZE 64
 #define TX_BUFFER_SIZE 64
 
+typedef struct
+{
+    const UsartConf *conf;
+    USART_TypeDef *usart;
+
+    uint8_t txBuffer[TX_BUFFER_SIZE];
+    volatile uint8_t txBufferIn;
+    volatile uint8_t txBufferOut;
+    volatile uint8_t txCnt;
+
+    uint8_t rxBuffer[RX_BUFFER_SIZE];
+    volatile uint8_t rxBufferIn;
+    volatile uint8_t rxBufferOut;
+    volatile uint8_t rxCnt;
+
+    bool rxPollingAvailable;
+}UsartHandle;
+
+extern UsartHandle g_usart1;
+extern UsartHandle g_usart2;
+extern UsartHandle g_usart3;
+
 //********************************************************************************************************************************************************************************************************
 // Public Function Declaration
 //********************************************************************************************************************************************************************************************************
-void Usart_Init(const UsartConf *conf, USART_TypeDef *usart);
+void Usart_Init(UsartHandle *handle, const UsartConf *conf, USART_TypeDef *usart);
 //********************************************************************************************************************************************************************************************************
 
-void Usart_WriteByte(uint8_t data);
+void Usart_WriteByte(UsartHandle *handle, uint8_t data);
 //********************************************************************************************************************************************************************************************************
 
-void Usart_WriteBytes(uint8_t *data, uint8_t size);
+void Usart_WriteBytes(UsartHandle *handle, uint8_t *data, uint8_t size);
 //********************************************************************************************************************************************************************************************************
 
-bool Usart_RxAvailable(void);
+bool Usart_RxAvailable(UsartHandle *handle);
 //********************************************************************************************************************************************************************************************************
 
-uint8_t Usart_ReadByte(void);
+uint8_t Usart_ReadByte(UsartHandle *handle);
 //********************************************************************************************************************************************************************************************************
 
 #endif // USART_H
