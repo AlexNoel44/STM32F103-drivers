@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "stm32f1xx.h"
 
-#define USED_PINS 6
+#define USED_PINS 8
 
 #define GPIO_Pin_0                 ((uint16_t)0x0001)  /*!< Pin 0 selected */
 #define GPIO_Pin_1                 ((uint16_t)0x0002)  /*!< Pin 1 selected */
@@ -36,6 +36,10 @@
 #define USART_TX_INDEX  4
 #define USART1_RX       GPIO_Pin_10
 #define USART_RX_INDEX  5
+#define USART2_TX       GPIO_Pin_2
+#define USART2_TX_INDEX 6
+#define USART2_RX       GPIO_Pin_3
+#define USART2_RX_INDEX 7
 
 typedef enum
 { 

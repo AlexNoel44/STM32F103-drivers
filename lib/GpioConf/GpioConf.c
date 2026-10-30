@@ -1,6 +1,6 @@
 #include "GpioConf.h"
 
-const GPIO_Conf g_GpioConf[USED_PINS] = 
+const GPIO_Conf g_GpioConf[USED_PINS] =
 {
     /*SPI1*/
         /*SPI1_SCK*/
@@ -43,6 +43,21 @@ const GPIO_Conf g_GpioConf[USED_PINS] =
         {
             .GPIO_Port = GPIOA,
             .GPIO_Pin = GPIO_Pin_10,
+            .GPIO_Speed = GPIO_Speed_0MHz,
+            .GPIO_Mode = GPIO_Mode_IN_FLOATING,
+        },
+    /*USART2*/
+        /*USART2_TX*/
+        {
+            .GPIO_Port = GPIOA,
+            .GPIO_Pin = GPIO_Pin_2,
+            .GPIO_Speed = GPIO_Speed_50MHz,
+            .GPIO_Mode = GPIO_Mode_AF_PP,
+        },
+        /*USART2_RX*/
+        {
+            .GPIO_Port = GPIOA,
+            .GPIO_Pin = GPIO_Pin_3,
             .GPIO_Speed = GPIO_Speed_0MHz,
             .GPIO_Mode = GPIO_Mode_IN_FLOATING,
         }
