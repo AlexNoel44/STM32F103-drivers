@@ -1,6 +1,7 @@
 #include "stm32f1xx.h"
 #include "Usart.h"
 #include "Gpio.h"
+#include "Neo6m.h"
 
 int main(void)
 {
@@ -13,7 +14,13 @@ int main(void)
         if (Usart_RxAvailable(&g_usart2))
         {
             uint8_t data = Usart_ReadByte(&g_usart2);
-            Usart_WriteByte(&g_usart1, data);
+            //Usart_WriteByte(&g_usart1, data);
+            Neo6m_Process(data);
         }
+
+        Usart_WriteByte(&g_usart1, Neo6m_Minute());
+        Usart_WriteByte(&g_usart1, Neo6m_GetLatitude());
+        Usart_WriteByte(&g_usart1, Neo6m_GetLongitude());
+
     }
 }
